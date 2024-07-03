@@ -11,19 +11,18 @@ import (
 // buffer is flushed after each message sent from the server and data is read asynchronously from
 // the client.
 type WebStream struct {
-	ResponseWriter http.ResponseWriter
-	Flusher        http.Flusher
-	Request        *http.Request
-	Ready          bool
-	Closer         chan bool
-	Closed         bool
-	Timeout        time.Duration
-	TimeoutSet     bool
+	responseWriter http.ResponseWriter
+	flusher        http.Flusher
+	request        *http.Request
+	ready          bool
+	closer         chan bool
+	closed         bool
+	timeout        time.Duration
+	timeoutSet     bool
 }
 
 // Handler is the HTTP handler function that sets up a WebStream to work over an HTTP connection.
-// This function will wait indefinitely until a timeout is reached or until the WebStream is
-// closed.
+// This function will wait until a timeout is reached or until the WebStream is closed.
 func (ws *WebStream) Handler(rw http.ResponseWriter, req *http.Request) {
 	flusher, ok := rw.(http.Flusher)
 
@@ -32,48 +31,47 @@ func (ws *WebStream) Handler(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ws.ResponseWriter = rw
-	ws.Flusher = flusher
-	ws.Request = req
-	ws.Ready = true
+	ws.responseWriter = rw
+	ws.flusher = flusher
+	ws.request = req
+	ws.ready = true
 
 	// Monitor if a timeout is ever set and close the connection if we ever reach that time
 	go func(ws *WebStream) {
-		for ws.Ready {
-			if ws.TimeoutSet {
+		for ws.ready {
+			if ws.timeoutSet {
 				select {
-				case <-time.After(ws.Timeout):
-					ws.Closer <- true
+				case <-time.After(ws.timeout):
+					ws.closer <- true
 				}
 			}
 		}
 	}(ws)
 
 	select {
-	case <-ws.Closer:
-		ws.Closed = true
+	case <-ws.closer:
+		ws.closed = true
 		return
 	}
 }
 
-// WriteString will simply convert the string to an array of bytes and send it over the ResponseWriter
-// and then immediately flush the message queue. Messages are sent asynchronously.
-func (ws *WebStream) WriteString(data string) {
+// Write sends data immediately by calling the connections responseWriter.Write method and immediately flushing.
+func (ws *WebStream) Write(data []byte) {
 	// make sure we haven't set this webstream as closed before
-	if ws.Closed {
+	if ws.closed {
 		return
 	}
 
-	// if the webstream isn't ready then we hold here indefinitely
-	for !ws.Ready {
+	// wait until the webstream is ready
+	for !ws.ready {
 	}
 
 	// due to the nature of async, if a webstream loses scope, this becomes nil
 	// so attempting to access its members is a no-no
 	if ws != nil {
 		// TODO: What if ws becomes nil at any point in here?
-		ws.ResponseWriter.Write([]byte(data))
-		ws.Flusher.Flush()
+		ws.responseWriter.Write(data)
+		ws.flusher.Flush()
 	}
 }
 
@@ -83,24 +81,24 @@ func (ws *WebStream) WriteString(data string) {
 // if a timeout is set later on in the connection lifespan, it will close after that timeout has
 // been reached from the time that you call SetTimeout.
 func (ws *WebStream) SetTimeout(d time.Duration) {
-	ws.Timeout = d
-	ws.TimeoutSet = true
+	ws.timeout = d
+	ws.timeoutSet = true
 }
 
-// Close closes a webstream and its HTTP connection. Any pending Write's will not go through after this
+// Close closes a webstream and its HTTP connection. Any pending writes will not go through after this
 // is called.
 func (ws *WebStream) Close() {
-	ws.Closer <- true
+	ws.closer <- true
 }
 
 func NewStream() *WebStream {
 	return &WebStream{
-		ResponseWriter: nil,
-		Flusher:        nil,
-		Request:        nil,
-		Ready:          false,
-		Closer:         make(chan bool),
-		Timeout:        0,
-		TimeoutSet:     false,
+		responseWriter: nil,
+		flusher:        nil,
+		request:        nil,
+		ready:          false,
+		closer:         make(chan bool),
+		timeout:        0,
+		timeoutSet:     false,
 	}
 }
