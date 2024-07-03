@@ -9,7 +9,8 @@ import (
 )
 
 func streamHandler(rw http.ResponseWriter, req *http.Request) {
-	ws := webstream.NewStream()
+	ws, _ := webstream.NewStream(rw, req)
+
 	go func() {
 		for i := 1; i <= 3; i++ {
 			ws.Write([]byte(fmt.Sprintf("Count: %d\n", i)))
@@ -17,7 +18,8 @@ func streamHandler(rw http.ResponseWriter, req *http.Request) {
 		}
 		ws.Close()
 	}()
-	ws.Handler(rw, req)
+
+	ws.Wait()
 }
 
 func main() {
